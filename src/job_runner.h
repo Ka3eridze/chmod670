@@ -9,4 +9,6 @@ typedef struct {
     int timeout;
 } Job;
 
+int start_job(Job *job, const char *command);
+
 #endif
