@@ -1,0 +1,9 @@
+server
+worker
+client
+
+*.o
+*.out
+*.log
+
+.vscode/
