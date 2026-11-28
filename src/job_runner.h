@@ -8,7 +8,8 @@ typedef enum {
     JOB_RUNNING,
     JOB_DONE,
     JOB_KILLED,
-    JOB_TIMEOUT
+    JOB_TIMEOUT,
+    JOB_CANCELLED
 } JobState;
 
 typedef struct {
@@ -27,5 +28,7 @@ typedef struct {
 int start_job(Job *job, const char *command);
 int check_job(Job *job);
 int check_timeout(Job *job);
+
+int cancel_job(Job *job);
 
 #endif

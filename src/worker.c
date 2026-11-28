@@ -1,3 +1,4 @@
+
 #define _POSIX_C_SOURCE 200809L
 
 #include "job_runner.h"
@@ -10,6 +11,14 @@
 #include <signal.h>
 #include <limits.h>
 #include <sys/wait.h>
+
+static volatile sig_atomic_t cancel_requested = 0;
+
+static void handle_cancel(int sig)
+{
+    (void)sig;
+    cancel_requested = 1;
+}
 
 int main(int argc, char *argv[])
 {
@@ -36,6 +45,18 @@ int main(int argc, char *argv[])
         .output_fd = -1
     };
 
+    // Register cancellation signal handler.
+    struct sigaction sa = {0};
+
+    sa.sa_handler = handle_cancel;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        perror("sigaction");
+        return 1;
+    }
+
     if (start_job(&job, argv[2]) == -1) {
         return 1;
     }
@@ -49,6 +70,16 @@ int main(int argc, char *argv[])
     int finished = 0;
 
     while (!finished) {
+
+        // Check for cancellation request.
+        if (cancel_requested) {
+            cancel_requested = 0;
+
+            if (cancel_job(&job) == -1) {
+                goto fail;
+            }
+        }
+
         struct pollfd pfd = {
             .fd = job.output_fd,
             .events = POLLIN
@@ -69,9 +100,19 @@ int main(int argc, char *argv[])
             while ((bytes = read(job.output_fd,
                                  buffer,
                                  sizeof(buffer))) > 0) {
+
                 fwrite(buffer, 1, bytes, stdout);
 
-                // Check the deadline even during continuous output.
+                // Check cancellation during continuous output.
+                if (cancel_requested) {
+                    cancel_requested = 0;
+
+                    if (cancel_job(&job) == -1) {
+                        goto fail;
+                    }
+                }
+
+                // Check timeout during continuous output.
                 if (check_timeout(&job) == -1) {
                     goto fail;
                 }
@@ -114,8 +155,10 @@ int main(int argc, char *argv[])
         }
 
         close(job.output_fd);
+        job.output_fd = -1;
     }
 
+    // Print final job status.
     switch (job.state) {
         case JOB_DONE:
             printf("DONE %d\n", job.exit_code);
@@ -127,6 +170,10 @@ int main(int argc, char *argv[])
 
         case JOB_TIMEOUT:
             printf("KILLED TIMEOUT\n");
+            break;
+
+        case JOB_CANCELLED:
+            printf("CANCELLED\n");
             break;
 
         default:

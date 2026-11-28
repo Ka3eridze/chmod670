@@ -112,14 +112,14 @@ int check_job(Job *job)
     if (WIFEXITED(status)) {
         job->exit_code = WEXITSTATUS(status);
 
-        if (job->state != JOB_TIMEOUT) {
+        if (job->state == JOB_RUNNING) {
             job->state = JOB_DONE;
         }
     }
     else if (WIFSIGNALED(status)) {
         job->term_signal = WTERMSIG(status);
 
-        if (job->state != JOB_TIMEOUT) {
+        if (job->state == JOB_RUNNING) {
             job->state = JOB_KILLED;
         }
     }
@@ -160,4 +160,24 @@ int check_timeout(Job *job)
     }
 
     return 0;
+}
+
+int cancel_job(Job *job)
+{
+    if (job->state != JOB_RUNNING) {
+        return 0;
+    }
+
+    if (kill(-job->pid, SIGKILL) == -1) {
+        if (errno == ESRCH) {
+            return 0;
+        }
+
+        perror("kill");
+        return -1;
+    }
+
+    job->state = JOB_CANCELLED;
+
+    return 1;
 }
